@@ -17,7 +17,7 @@ IMG_START = QImage('./images/rocket.png')
 
 
 class Cell(QWidget):
-
+    expandable=pyqtSignal(int, int)
     def __init__(self, x, y):
         super().__init__()
         self.setFixedSize(20, 20)
@@ -29,7 +29,11 @@ class Cell(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         r = event.rect()
-        outer, inner = Qt.GlobalColor.gray, Qt.GlobalColor.lightGray
+        if self.is_revealed:
+            color=self.palette().color(QPalette.ColorRole.NColorRoles.Window)
+            outer, inner=color, color
+        else:
+            outer, inner = Qt.GlobalColor.gray, Qt.GlobalColor.lightGray
         p.fillRect(r, QBrush(inner))
         pen = QPen(outer)
         pen.setWidth(1)
@@ -65,6 +69,8 @@ class Cell(QWidget):
     def reveal(self):
         if not self.is_revealed:
             self.reveal_self()
+            if self.mines_around==0:
+                self.expandable.emit(self.x, self.y)
 
     def reveal_self(self):
         self.is_revealed = True
@@ -137,6 +143,7 @@ class MainWindow(QMainWindow):
             for y in range(self.board_size):
                 cell = Cell(x, y)
                 self.grid.addWidget(cell, x, y)
+                cell.expandable.connect(self.expand_reveal)
 
     def reset(self):
         self.mines_count = LEVELS[self.level][1]
@@ -192,6 +199,15 @@ class MainWindow(QMainWindow):
         for _, _, cell in self.get_around_cells(start_cell.x, start_cell.y):
             if not cell.is_mine:
                 cell.click()
+    
+    def expand_reveal(self, x, y):
+        for _, _, cell in self.get_revealable_cells(x, y):
+            cell.reveal()
+
+    def get_revealable_cells(self, x, y):
+        for x1, y1, cell in self.get_around_cells(x, y):
+            if not cell.is_mine and not cell.is_flagged and not cell.is_revealed:
+                yield(x1, y1, cell)
 
 if __name__ == '__main__':
     app = QApplication([])
