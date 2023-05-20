@@ -13,7 +13,7 @@ LEVELS = (
 
 IMG_BOMB = QImage('./images/bomb.png')
 IMG_CLOCK = QImage('./images/clock.png')
-IMG_ROCKET = QImage('./images/rocket.png')
+IMG_START = QImage('./images/rocket.png')
 
 
 class Cell(QWidget):
@@ -39,26 +39,36 @@ class Cell(QWidget):
         if self.is_revealed:
             if self.is_mine:
                 p.drawPixmap(r, QPixmap(IMG_BOMB))
-            elif self.is_started:
-                p.drawPixmap(IMG_ROCKET)
+            elif self.is_start:
+                p.drawPixmap(r, QPixmap(IMG_START))
             else:
-                pen=QPen(Qt.GlobalColor.black)
+                pen = QPen(Qt.GlobalColor.black)
                 p.setPen(pen)
-                f=p.font()
+                f = p.font()
                 f.setBold(True)
                 p.setFont(f)
                 p.drawText(r, Qt.AlignmentFlag.AlignCenter, str(self.mines_around))
 
-    
     def reset(self):
-        self.is_start=False
-        self.is_mine=False
-        self.mines_around=0
-        self.is_revealed=False
-        self.is_flagged=False
-        self.is_end=False
+        self.is_start = False
+        self.is_mine = False
+        self.mines_around = 0
+        self.is_revealed = False
+        self.is_flagged = False
+        self.is_end = False
         self.update()
+    
+    def click(self):
+        if not self.is_revealed and not self.is_flagged:
+            self.reveal()
 
+    def reveal(self):
+        if not self.is_revealed:
+            self.reveal_self()
+
+    def reveal_self(self):
+        self.is_revealed = True
+        self.update()
 
 
 class MainWindow(QMainWindow):
@@ -127,64 +137,61 @@ class MainWindow(QMainWindow):
             for y in range(self.board_size):
                 cell = Cell(x, y)
                 self.grid.addWidget(cell, x, y)
-    
+
     def reset(self):
-        self.mines_count=LEVELS[self.level][1]
+        self.mines_count = LEVELS[self.level][1]
         self.mines.setText(f'{self.mines_count:03d}')
         self.clock.setText('000')
 
-
-        for _, _, cell in self.get_cells():
+        for _, _, cell in self.get_all_cells():
             cell.reset()
-        mine_positions=self.set_mines()
+
+        mine_positions = self.set_mines()
         self.calc_mines_around()
         self.set_start()
 
-        
-    def get_cells(self):
-        for x in range (self.board_size):
+    def get_all_cells(self):
+        for x in range(self.board_size):
             for y in range(self.board_size):
-                yield(x, y, self.grid.itemAtPosition(x, y).widget())
+                yield (x, y, self.grid.itemAtPosition(x, y).widget())
 
     def set_mines(self):
-        positions=[]
-        while len(positions)<self.mines_count:
-            x=random.randint(0, self.board_size-1)
-            y=random.randint(0, self.board_size-1)
+        positions = []
+        while len(positions) < self.mines_count:
+            x = random.randint(0, self.board_size - 1)
+            y = random.randint(0, self.board_size - 1)
             if (x, y) not in positions:
-                self.grid.itemAtPosition(x, y).widget().is_mine=True
+                self.grid.itemAtPosition(x, y).widget().is_mine = True
                 positions.append((x, y))
         return positions
     
     def calc_mines_around(self):
-        for x, y, cell in self.get_cells():
-            cell.mines_around=self.get_mines_around_cell(x, y)
-    
+        for x, y, cell in self.get_all_cells():
+            cell.mines_around = self.get_mines_around_cell(x, y)
+
     def get_mines_around_cell(self, x, y):
-        cells=[cell for _, _, cell in self.get_around_cells(x, y)]
+        cells = [cell for _, _, cell in self.get_around_cells(x, y)]
         return sum(1 if cell.is_mine else 0 for cell in cells)
-    
+
     def get_around_cells(self, x, y):
-        positions=[]
-        for x1 in range(max(0, x-1), min(x+2, self.board_size)):
-            for y1 in range(max(0, y-1), min(y+2, self.board_size)):
-                positions.append((x1, y1, self.grid.itemAtPosition(x1, y1).widget()))
+        positions = []
+        for xi in range(max(0, x-1), min(x+2, self.board_size)):
+            for yi in range(max(0, y-1), min(y+2, self.board_size)):
+                positions.append((xi, yi, self.grid.itemAtPosition(xi, yi).widget()))
         return positions
     
     def set_start(self):
-        empty_cells=[cell
-                     for x, y, cell
-                     in self.get_cells()
-                     if not cell.is_mine and cell.mines_around==0
-                     ]
-        random.choice(empty_cells).is_start=True
+        empty_cells = [cell
+                       for x, y, cell
+                       in self.get_all_cells()
+                       if not cell.is_mine and cell.mines_around == 0
+                      ]
+        start_cell = random.choice(empty_cells)
+        start_cell.is_start = True
 
-
-
-
-
-
-
+        for _, _, cell in self.get_around_cells(start_cell.x, start_cell.y):
+            if not cell.is_mine:
+                cell.click()
 
 if __name__ == '__main__':
     app = QApplication([])
