@@ -1,5 +1,6 @@
 import random
 import time
+from PyQt6 import QtGui
 
 from PyQt6.QtGui import *
 from PyQt6.QtWidgets import *
@@ -15,9 +16,23 @@ IMG_BOMB = QImage('./images/bomb.png')
 IMG_CLOCK = QImage('./images/clock.png')
 IMG_START = QImage('./images/rocket.png')
 
+STATUS_READY=0
+STATUS_PLAY=1
+STATUS_FAIL=2
+STATUS_SUCCESS=3
+
+STATUS_ICONS={
+    STATUS_READY:'./images/plus.png',
+    STATUS_PLAY:'./images/smiley.png',
+    STATUS_FAIL:'./images/cross.png',
+    STATUS_SUCCESS:'./images/smiley-lol.png',
+    }
+
 
 class Cell(QWidget):
     expandable=pyqtSignal(int, int)
+    clicked=pyqtSignal()
+
     def __init__(self, x, y):
         super().__init__()
         self.setFixedSize(20, 20)
@@ -76,6 +91,11 @@ class Cell(QWidget):
         self.is_revealed = True
         self.update()
 
+    def mouseReleaseEvent(self, event):
+        self.clicked.emit()
+        if event.button()==Qt.MouseButton.LeftButton:
+            self.click()
+
 
 class MainWindow(QMainWindow):
 
@@ -88,6 +108,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle('Сапер')
         self.initUI()
         self.init_grid()
+        self.update_status(STATUS_READY)
         self.reset()
         self.setFixedSize(self.sizeHint())
         self.show()
@@ -144,6 +165,8 @@ class MainWindow(QMainWindow):
                 cell = Cell(x, y)
                 self.grid.addWidget(cell, x, y)
                 cell.expandable.connect(self.expand_reveal)
+                cell.clicked.connect(self.handle_click)
+
 
     def reset(self):
         self.mines_count = LEVELS[self.level][1]
@@ -208,7 +231,14 @@ class MainWindow(QMainWindow):
         for x1, y1, cell in self.get_around_cells(x, y):
             if not cell.is_mine and not cell.is_flagged and not cell.is_revealed:
                 yield(x1, y1, cell)
+    
+    def update_status(self, status):
+        self.status=status
+        self.button.setIcon(QIcon(STATUS_ICONS[self.status]))
 
+    def handle_click(self):
+        if self.status==STATUS_READY:
+            self.update_status(STATUS_PLAY)
 if __name__ == '__main__':
     app = QApplication([])
     window = MainWindow()
