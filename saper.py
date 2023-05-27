@@ -109,6 +109,9 @@ class MainWindow(QMainWindow):
         self.initUI()
         self.init_grid()
         self.update_status(STATUS_READY)
+        self._timer=QTimer()
+        self._timer.timeout.connect(self.update_timer)
+        self._timer.start(1000)
         self.reset()
         self.setFixedSize(self.sizeHint())
         self.show()
@@ -239,6 +242,12 @@ class MainWindow(QMainWindow):
     def handle_click(self):
         if self.status==STATUS_READY:
             self.update_status(STATUS_PLAY)
+            self._timer_start=int(time.time())
+
+    def update_timer(self):
+        if self.status==STATUS_PLAY:
+            n_seconds=int(time.time())-self._timer_start
+            self.clock.setText(f'{n_seconds:03d}')
 if __name__ == '__main__':
     app = QApplication([])
     window = MainWindow()
