@@ -1,6 +1,5 @@
 import random
 import time
-from PyQt6 import QtGui
 
 from PyQt6.QtGui import *
 from PyQt6.QtWidgets import *
@@ -15,24 +14,25 @@ LEVELS = (
 IMG_BOMB = QImage('./images/bomb.png')
 IMG_CLOCK = QImage('./images/clock.png')
 IMG_START = QImage('./images/rocket.png')
+IMG_FLAG = QImage('./images/flag.png')
 
-STATUS_READY=0
-STATUS_PLAY=1
-STATUS_FAIL=2
-STATUS_SUCCESS=3
+STATUS_READY = 0
+STATUS_PLAY = 1
+STATUS_FAILED = 2
+STATUS_SUCCESS = 3
 
-STATUS_ICONS={
-    STATUS_READY:'./images/plus.png',
-    STATUS_PLAY:'./images/smiley.png',
-    STATUS_FAIL:'./images/cross.png',
-    STATUS_SUCCESS:'./images/smiley-lol.png',
-    }
-
+STATUS_ICONS = {
+    STATUS_READY: './images/plus.png',
+    STATUS_PLAY: './images/smiley.png',
+    STATUS_FAILED: './images/cross.png',
+    STATUS_SUCCESS: './images/smiley-lol.png',
+}
 
 class Cell(QWidget):
-    expandable=pyqtSignal(int, int)
-    clicked=pyqtSignal()
-    game_over=pyqtSignal()
+    expandable = pyqtSignal(int, int)
+    clicked = pyqtSignal()
+    flagged=pyqtSignal(bool)
+    game_over = pyqtSignal()
 
     def __init__(self, x, y):
         super().__init__()
@@ -45,11 +45,12 @@ class Cell(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         r = event.rect()
+        
         if self.is_revealed:
-            color=self.palette().color(QPalette.ColorRole.NColorRoles.Window)
-            outer, inner=color, color
+            color = self.palette().color(QPalette.ColorRole.NColorRoles.Window)
+            outer, inner = color, color
             if self.is_end:
-                inner=Qt.GlobalColor.black
+                inner = Qt.GlobalColor.black
         else:
             outer, inner = Qt.GlobalColor.gray, Qt.GlobalColor.lightGray
         p.fillRect(r, QBrush(inner))
@@ -70,6 +71,8 @@ class Cell(QWidget):
                 f.setBold(True)
                 p.setFont(f)
                 p.drawText(r, Qt.AlignmentFlag.AlignCenter, str(self.mines_around))
+        elif self.is_flagged:
+            p.drawPixmap(r, QPixmap(IMG_FLAG))
 
     def reset(self):
         self.is_start = False
@@ -87,10 +90,10 @@ class Cell(QWidget):
     def reveal(self):
         if not self.is_revealed:
             self.reveal_self()
-            if self.mines_around==0:
+            if self.mines_around == 0:
                 self.expandable.emit(self.x, self.y)
             if self.is_mine:
-                self.is_end=True
+                self.is_end = True
                 self.game_over.emit()
 
     def reveal_self(self):
@@ -99,8 +102,17 @@ class Cell(QWidget):
 
     def mouseReleaseEvent(self, event):
         self.clicked.emit()
-        if event.button()==Qt.MouseButton.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton:
             self.click()
+        elif event.button() == Qt.MouseButton.RightButton:
+            if not self.is_revealed:
+                self.toggle_flag()
+        self.clicked.emit()
+    
+    def toggle_flag(self):
+        self.is_flagged = not self.is_flagged
+        self.update()
+        self.flagged.emit(self.is_flagged)
 
 
 class MainWindow(QMainWindow):
@@ -115,7 +127,7 @@ class MainWindow(QMainWindow):
         self.initUI()
         self.init_grid()
         self.update_status(STATUS_READY)
-        self._timer=QTimer()
+        self._timer = QTimer()
         self._timer.timeout.connect(self.update_timer)
         self._timer.start(1000)
         self.reset()
@@ -143,6 +155,8 @@ class MainWindow(QMainWindow):
         self.button.setIconSize(QSize(32, 32))
         self.button.setIcon(QIcon('./images/smiley.png'))
         self.button.setFlat(True)
+        self.button.pressed.connect(self.button_pressed)
+
 
         l = QLabel()
         l.setPixmap(QPixmap.fromImage(IMG_BOMB))
@@ -176,7 +190,7 @@ class MainWindow(QMainWindow):
                 cell.expandable.connect(self.expand_reveal)
                 cell.clicked.connect(self.handle_click)
                 cell.game_over.connect(self.game_over)
-
+                cell.flagged.connect(self.handle_flag)
 
     def reset(self):
         self.mines_count = LEVELS[self.level][1]
@@ -232,32 +246,69 @@ class MainWindow(QMainWindow):
         for _, _, cell in self.get_around_cells(start_cell.x, start_cell.y):
             if not cell.is_mine:
                 cell.click()
-    
+
     def expand_reveal(self, x, y):
         for _, _, cell in self.get_revealable_cells(x, y):
             cell.reveal()
-
+    
     def get_revealable_cells(self, x, y):
-        for x1, y1, cell in self.get_around_cells(x, y):
+        for xi, yi, cell in self.get_around_cells(x, y):
             if not cell.is_mine and not cell.is_flagged and not cell.is_revealed:
-                yield(x1, y1, cell)
+                yield (xi, yi, cell)
     
     def update_status(self, status):
-        self.status=status
+        self.status = status
         self.button.setIcon(QIcon(STATUS_ICONS[self.status]))
 
     def handle_click(self):
-        if self.status==STATUS_READY:
+        if self.status == STATUS_READY:
             self.update_status(STATUS_PLAY)
-            self._timer_start=int(time.time())
+            self._timer_start = int(time.time())
+        elif self.status==STATUS_PLAY:
+            self.check_win()
 
     def update_timer(self):
-        if self.status==STATUS_PLAY:
-            n_seconds=int(time.time())-self._timer_start
+        if self.status == STATUS_PLAY:
+            n_seconds = int(time.time()) - self._timer_start
             self.clock.setText(f'{n_seconds:03d}')
-    
+
     def game_over(self):
-        self.update_status(STATUS_FAIL)
+        self.update_status(STATUS_FAILED)
+        self.reveal_grid()
+
+    def reveal_grid(self):
+        for _, _, cell in self.get_all_cells():
+            if not (cell.is_flagged and cell.is_mine):
+                cell.reveal_self()
+
+    def handle_flag(self, flagged):
+        self.mines_count+=-1 if flagged else 1
+        self.mines.setText(f'{self.mines_count:03d}')
+    
+    def check_win(self):
+        if self.mines_count==0:
+            if all(cell.is_revealed or cell.is_flagged for _, _, cell in self.get_all_cells()):
+                self.update_status(STATUS_SUCCESS)
+            else:
+                unrevealed=[]
+                for _, _, cell in self.get_all_cells():
+                    if not cell.is_revealed and cell.is_flagged:
+                        unrevealed.append(cell)
+                        if len(unrevealed)>self.mines_count or not cell.is_mine:
+                            return
+                    if len(unrevealed)==self.mines_count:
+                        if all(cell.is_flagged==cell.is_mine or cell in unrevealed for _, _, cell in self.get_all_cells()):
+                            for cell in unrevealed:
+                                cell.toggle_flag()
+                            self.update_status(STATUS_SUCCESS)
+    def button_pressed(self):
+        if self.status==STATUS_PLAY:
+            self.update_status(STATUS_FAILED)
+            self.reveal_grid()
+        elif self.status in (STATUS_FAILED, STATUS_SUCCESS):
+            self.update_status(STATUS_READY)
+            self.reset()
+
 if __name__ == '__main__':
     app = QApplication([])
     window = MainWindow()
